@@ -1,6 +1,23 @@
 #include <iostream>
 #include "matrix.hpp"
 #include <fstream>
+#include <chrono>
+#include <atomic>
+
+inline std::chrono::high_resolution_clock::time_point get_current_time_fenced()
+{
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    auto res_time = std::chrono::high_resolution_clock::now();
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    return res_time;
+}
+
+template<class D>
+inline long long to_us(const D& d)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(d).count();
+}
+
 
 std::vector<std::string> split(const std::string& str)
 {
@@ -54,31 +71,65 @@ std::vector<std::vector<double>> read_from_file(std::string &file_name, size_t n
 
 
 int main() {
-//    // Some examples of usage
-//    // For more detailed instructions open README.md file
-
     std::string name = "../matrices.txt";
-    matrix large_m(150, 150);
-    large_m = read_from_file(name, 150,  150);
+    matrix large_m(400, 400);
+    large_m = read_from_file(name, 400,  400);
 
-    matrix M_1(3, 3);
+
+    matrix m_1(3, 3);
     std::vector<std::vector<double>> values_1 = {{1, 2, 3},
-                                                 {4, 5, 4},
-                                                 {1, 1, 1}};
+                                                 {4, 5, 6},
+                                                 {7, 8, 1}};
+    m_1 = values_1;
 
-    M_1 = values_1;
-    matrix M_2(3, 3);
-    std::vector<std::vector<double>> values_2 = {{-3, 1, -3},
-                                                 {2,5,-3},
-                                                 {5,3,-3}};
+    matrix m_2(6, 6);
+    std::vector<std::vector<double>> values_2 = {{2,0,0,0,0,1},
+                                                 {0,0,4,0,0,0},
+                                                  {0,0,0,0,9,0},
+                                                  {0,10,0,0,0,0},
+                                                  {0,0,0,3,3,0},
+                                                  {0,0,0,0,7,0}};
+    m_2 = values_2;
 
-    std::vector<double> evalues = {-0.822, 0.342, 7.498};
-    auto e = matrix::eigenvectors(M_1, evalues);
-    std::cout << e.to_string() << std::endl;
 
-    matrix M_inverse(150, 150);
-    M_inverse = matrix::inverse_parallel(large_m);
-    std::cout << M_inverse.to_string() << "\n";
+    // testing result;
+
+    std::cout << matrix::add(m_1, m_1).to_string() << std::endl;
+    std::cout << matrix::add_parallel(m_1, m_1).to_string() << std::endl;
+
+    std::cout << matrix::sub(m_1, m_1).to_string() << std::endl;
+    std::cout << matrix::sub_parallel(m_1, m_1).to_string() << std::endl;
+
+    std::cout << matrix::mul(m_1, m_1).to_string() << std::endl;
+    std::cout << matrix::mul_parallel(m_1, m_1).to_string() << std::endl;
+
+    std::cout << matrix::inverse(m_1).to_string() << std::endl;
+    std::cout << matrix::inverse_parallel(m_1).to_string() << std::endl;
+
+    auto e_res1 = matrix::eigenvalues(m_2);
+    auto e_res2 = matrix::eigenvalues(m_2);
+
+    matrix e1(1, e_res1.size());
+    e1 = {e_res1};
+    std::cout << e1.to_string() << std::endl;
+    e1 = {e_res2};
+    std::cout << e1.to_string() << std::endl;
+
+    std::vector<double> eigenvalues = {-5.074, -0.380, 12.454};
+
+    std::cout << matrix::eigenvectors(m_1, eigenvalues).to_string() << std::endl;
+    std::cout << matrix::eigenvectors_parallel(m_1, eigenvalues).to_string() << std::endl;
+
+    auto s_add_p = get_current_time_fenced();
+    auto M_res_p = matrix::mul_parallel(large_m, large_m);
+    auto f_add_p = get_current_time_fenced();
+
+    auto s_add = get_current_time_fenced();
+    auto M_res = matrix::mul(large_m, large_m);
+    auto f_add = get_current_time_fenced();
+
+    std::cout << "mul parallel: " << to_us(f_add_p - s_add_p)<< std::endl;
+    std::cout << "mul seq: " << to_us(f_add - s_add)<< std::endl;
 
     return 0;
 
