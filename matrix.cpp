@@ -1,8 +1,6 @@
 #include "matrix.hpp"
 #include <thread>
-#include <mutex>
 #include <math.h>
-
 
 std::vector<size_t> make_vector_steps_for_threads(size_t num, size_t &num_threads){
     std::vector<size_t> steps;
@@ -430,7 +428,6 @@ matrix matrix_correspond_eigenvalue(const matrix &m, const double eigenvalue)
 std::vector<double> calculate_eigenvector(double value, matrix &m)
 {
     auto correspond_to_eigenvalue = matrix_correspond_eigenvalue(m, value);
-//        size_t rank = rankOfMatrix(transpose(correspond_to_eigenvalue));
     size_t rank = m.get_cols() - 1;
     auto tr = new_m_transpose(correspond_to_eigenvalue);
     auto q = q_from_householder_reflections(tr);
@@ -438,19 +435,18 @@ std::vector<double> calculate_eigenvector(double value, matrix &m)
     return eigenvector[0];
 }
 
-
-
 matrix matrix::eigenvectors(matrix &m, std::vector<double> &eigenvalues)
 {
     std::vector<std::vector<double>> eigenvectors;
-    if (m.get_rows() != m.get_cols() || m.get_cols() != eigenvalues.size()) {
+    if (m.get_rows() != m.get_cols()) {
         std::runtime_error("matrices are not square");
     }
 
+    eigenvectors.reserve(eigenvalues.size());
     for (auto &value: eigenvalues)
         eigenvectors.push_back(calculate_eigenvector(value, m));
 
-    matrix res(m.get_rows(), m.get_cols());
+    matrix res(eigenvalues.size(), m.get_rows());
     res = eigenvectors;
     return res;
 }
@@ -466,29 +462,6 @@ void calculate_eigenvector_for_parallel(std::vector<std::vector<double>> &eigenv
     }
 }
 
-
-matrix matrix::eigenvectors_parallel(matrix &m, std::vector<double> &eigenvalues)
-{
-    std::mutex my_mutex;
-    std::vector<std::vector<double>> eigenvectors;
-    if (m.get_rows() != m.get_cols() || m.get_cols() != eigenvalues.size()) {
-        std::runtime_error("matrices are not square");
-    }
-
-    for (auto &value: eigenvalues)
-        eigenvectors.push_back(calculate_eigenvector(value, m));
-
-    matrix res(m.get_rows(), m.get_cols());
-    res = eigenvectors;
-    return res;
-}
-
-
-
-
-
-
-
 matrix matrix::mul_on_num(const matrix &m1, double num)
 {
     matrix mul_matrix(m1.get_rows(), m1.get_cols());
@@ -500,6 +473,26 @@ matrix matrix::mul_on_num(const matrix &m1, double num)
     return mul_matrix;
 }
 
+matrix matrix::eigenvectors_parallel(matrix &m, std::vector<double> &eigenvalues)
+{
+    std::mutex my_mutex;
+    std::vector<std::vector<double>> eigenvectors;
+    if (m.get_rows() != m.get_cols()) {
+        std::runtime_error("matrices are not square");
+    }
+    size_t num_threads = std::thread::hardware_concurrency();
+    std::vector<size_t> steps = make_vector_steps_for_threads(eigenvalues.size(), num_threads);
+    std::thread myThreads[num_threads];
+
+    for (int i = 0; i < num_threads; i++) {
+        myThreads[i] = std::thread(calculate_eigenvector_for_parallel, std::ref(eigenvectors), std::ref(eigenvalues), std::ref(m), steps[i], steps[i+1], std::ref(my_mutex));
+    }
+    for (int i = 0; i < num_threads; i++) myThreads[i].join();
+    matrix res(eigenvalues.size(), m.get_rows());
+    res = eigenvectors;
+    return res;
+}
+
 
 std::vector<double> matrix::eigenvalues(const matrix &m1) {
     std::vector<double> list(m1.get_rows());
@@ -507,18 +500,43 @@ std::vector<double> matrix::eigenvalues(const matrix &m1) {
     if (m1.get_rows() != m1.get_cols()) {
         std::runtime_error("matrices are of different sizes");
     }
-    for (size_t i = 0; i < m1.get_rows(); i++) {
-        list[i] = 1;
-    }
-    for (size_t i = 0; i < m1.get_rows(); i++) {
-        for (size_t j = 0; j < m1.get_rows(); j++) {
 
-            eigenvalues[i] = eigenvalues[i] + m1(i,j) * list[j];
-        }
+    for (size_t i = 0; i < m1.get_rows(); i++)
+        list[i] = 1;
+
+    for (size_t i = 0; i < m1.get_rows(); i++) {
+        for (size_t j = 0; j < m1.get_rows(); j++)
+            eigenvalues[i] += + m1(i,j) * list[j];
     }
     return eigenvalues;
 }
 
+void eigenvalues_for_parallel(std::vector<double> &eigenvalues, matrix &m1, std::vector<double> &list, size_t from, size_t to)
+{
+    for (size_t i = from; i < to; i++) {
+        for (size_t j = 0; j < m1.get_rows(); j++)
+            eigenvalues[i] += + m1(i,j) * list[j];
+    }
+}
+
+std::vector<double> matrix::eigenvalues_parallel(matrix &m1) {
+    std::vector<double> list(m1.get_rows());
+    std::vector<double> eigenvalueslst(m1.get_rows());
+    if (m1.get_rows() != m1.get_cols()) {
+        std::runtime_error("matrices are of different sizes");
+    }
+    for (size_t i = 0; i < m1.get_rows(); i++)
+        list[i] = 1;
+
+    size_t num_threads = std::thread::hardware_concurrency();
+    std::vector<size_t> steps = make_vector_steps_for_threads(m1.get_rows(), num_threads);
+    std::thread myThreads[num_threads];
+    for (int i = 0; i < num_threads; i++) {
+        myThreads[i] = std::thread(eigenvalues_for_parallel, std::ref(eigenvalueslst), std::ref(m1), std::ref(list), steps[i], steps[i+1]);
+    }
+    for (int i = 0; i < num_threads; i++) myThreads[i].join();
+    return eigenvalueslst;
+}
 
 matrix &matrix::operator=(const std::vector<std::vector<double>> &init_values) {
     if (init_values.size() != rows || init_values[0].size() != cols) {
