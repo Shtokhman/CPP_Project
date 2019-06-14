@@ -124,13 +124,15 @@ public:
 
     static matrix mul_on_num(const matrix &m1, double num);
 
-    static matrix matrix_correspond_eigenvalue(const matrix &m, const double eigenvalue);
-
     static matrix eigenvectors(matrix &m, std::vector<double> &eigenvalues);
 
     static std::vector<double> eigenvalues(const matrix &m1);
 
-};
+    static matrix eigenvectors_parallel(matrix &m, std::vector<double> &eigenvalues);
+
+    static std::vector<double> eigenvalues_parallel(matrix &m1);
+
+    };
 
 
 #endif // PARALLEL_MATRIX_LIBRARY_H
